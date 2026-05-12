@@ -159,7 +159,6 @@ URLS_RU = [
     "https://github.com/seknei3/psychic-fiestas/raw/main/bobi_vpn.txt",
     "https://github.com/seknei3/psychic-fiestas/raw/main/vpn_renamed.txt",
     "https://raw.githubusercontent.com/OZRED/vless/refs/heads/main/SuicideEtoExit",
-    # Ниже добавлены отсутствовавшие URL из предыдущего списка
     "https://raw.githubusercontent.com/FLEXIY0/matryoshka-vpn/refs/heads/main/configs/russia_whitelist.txt",
     "https://raw.githubusercontent.com/y9felix/s/refs/heads/main/r",
     "https://raw.githubusercontent.com/sakha1370/OpenRay/fd98dbbea14ddd5912a93481659caaba565e45d4/output/country/RU.txt",
@@ -521,15 +520,9 @@ def get_protocol_type(key: str) -> str:
     return "unknown"
 
 def extract_base_key(key: str) -> str:
-    """Возвращает базовую часть ключа без фрагмента #..."""
     return key.split("#")[0]
 
 def deduplicate_keys(items):
-    """
-    Дедупликация по (host, port, protocol_type).
-    items: список (key, tag)
-    Возвращает отфильтрованный список, оставляя только первый встреченный дубликат.
-    """
     seen = {}
     result = []
     for key, tag in items:
@@ -553,7 +546,6 @@ def deduplicate_keys(items):
 
 # ==================== БЫСТРЫЙ TCP PING ====================
 def tcp_ping(host: str, port: int, timeout: float = 2.0) -> int | None:
-    """Быстрый TCP connect, возвращает задержку в мс или None при ошибке."""
     start = time.time()
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -596,14 +588,11 @@ def check_single_key(data):
         if fast_hint == "RU" and _has_many_ru_markers(host, key):
             return None, None, None, None, key, ERR_OTHER
 
-    # Быстрый TCP ping перед основной проверкой
     ping_ms = tcp_ping(host, port, timeout=2.0)
     if ping_ms is None:
         if ip:
             add_ip_to_blacklist(ip, f"tcp_ping_timeout:{port}")
         return None, None, None, None, key, ERR_TIMEOUT
-
-    # Если TCP ping прошёл, но задержка слишком велика (>MAX_PING_MS) — тоже отбрасываем
     if ping_ms > MAX_PING_MS:
         if ip:
             add_ip_to_blacklist(ip, f"high_ping:{ping_ms}ms")
@@ -674,12 +663,10 @@ def check_single_key(data):
             add_ip_to_blacklist(ip, "unknown_error")
         return None, None, None, None, key, ERR_OTHER
 
-    # Успех — удаляем из чёрного списка IP
     if ip:
         remove_ip_from_blacklist(ip)
 
     latency = int((time.time() - start) * 1000)
-    # Предпочитаем реальную задержку от протокола, но если TLS/WS даёт большую, оставляем её
     country_exit = detect_exit_country_via_http(host)
     if country_exit == "UNKNOWN":
         country_exit = get_country_fast(host, key)
@@ -776,7 +763,7 @@ def save_json(path, data):
         pass
 
 def generate_subscriptions_list(ru_fast_files, ru_all_files, euro_fast_files, euro_all_files):
-    GITHUB_USER_REPO = "sssergy/vpn-checker"
+    GITHUB_USER_REPO = "sssergy/vpncheck"
     BRANCH = "main"
     BASE_RAW = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}"
     subs_lines = []
@@ -829,16 +816,7 @@ def generate_subscriptions_list(ru_fast_files, ru_all_files, euro_fast_files, eu
         subs_lines.append(f"{BASE_RAW}/checked/My_Euro/my_euro_all_WHITE.txt")
         subs_lines.append("")
 
-    ru_black_path = os.path.join(FOLDER_RU, "ru_white_all_BLACK.txt")
-    if os.path.exists(ru_black_path) and os.path.getsize(ru_black_path) > 0:
-        subs_lines.append("=== ⚠️ BLACK RUSSIA (ALL) ===")
-        subs_lines.append(f"{BASE_RAW}/checked/RU_Best/ru_white_all_BLACK.txt")
-        subs_lines.append("")
-
-    euro_black_path = os.path.join(FOLDER_EURO, "my_euro_all_BLACK.txt")
-    if os.path.exists(euro_black_path) and os.path.getsize(euro_black_path) > 0:
-        subs_lines.append("=== ⚠️ BLACK EUROPE (ALL) ===")
-        subs_lines.append(f"{BASE_RAW}/checked/My_Euro/my_euro_all_BLACK.txt")
+    # Секции BLACK удалены
 
     subs_path = os.path.join(BASE_DIR, "subscriptions_list.txt")
     with open(subs_path, "w", encoding="utf-8") as f:
@@ -870,7 +848,6 @@ if __name__ == "__main__":
     history = load_json(HISTORY_FILE)
     tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
 
-    # Дедупликация по (host, port, protocol)
     tasks = deduplicate_keys(tasks)
 
     unique_tasks = {k: tag for k, tag in tasks}
@@ -999,13 +976,13 @@ if __name__ == "__main__":
     print(f"\n💾 Сохранение EURO ALL → {FOLDER_EURO} (по {EURO_CHUNK_LIMIT} ключей):")
     euro_all_files = save_chunked(res_euro_clean, FOLDER_EURO, "my_euro_all", chunk_size=EURO_CHUNK_LIMIT)
 
-    print(f"\n💾 WHITE/BLACK → {FOLDER_RU}:")
+    print(f"\n💾 WHITE → {FOLDER_RU}:")
     save_exact(res_ru_clean, FOLDER_RU, "ru_white_all_WHITE.txt")
-    save_exact(dead_ru, FOLDER_RU, "ru_white_all_BLACK.txt")
 
-    print(f"\n💾 WHITE/BLACK → {FOLDER_EURO}:")
+    print(f"\n💾 WHITE → {FOLDER_EURO}:")
     save_exact(res_euro_clean, FOLDER_EURO, "my_euro_all_WHITE.txt")
-    save_exact(dead_euro, FOLDER_EURO, "my_euro_all_BLACK.txt")
+
+    # BLACK файлы не создаём
 
     generate_subscriptions_list(ru_fast_files, ru_all_files, euro_fast_files, euro_all_files)
 
