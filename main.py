@@ -28,17 +28,17 @@ if os.path.exists(FOLDER_EURO):
 os.makedirs(FOLDER_RU, exist_ok=True)
 os.makedirs(FOLDER_EURO, exist_ok=True)
 
-TIMEOUT = 5
+TIMEOUT = 7
 socket.setdefaulttimeout(TIMEOUT)
 THREADS = 40
 
 CACHE_HOURS = 6
 CHUNK_LIMIT = 1000
 EURO_CHUNK_LIMIT = 500
-MAX_KEYS_TO_CHECK = 30000
+MAX_KEYS_TO_CHECK = 300000
 
-MAX_PING_MS = 3000
-FAST_LIMIT = 3000
+MAX_PING_MS = 1000
+FAST_LIMIT = 1000
 MAX_HISTORY_AGE = 2 * 24 * 3600
 
 IP_CACHE_FILE = os.path.join(BASE_DIR, "ip_cache.json")
@@ -57,7 +57,7 @@ RU_FILES = ["ru_white_part1.txt", "ru_white_part2.txt", "ru_white_part3.txt", "r
 EURO_FILES = ["my_euro_part1.txt", "my_euro_part2.txt", "my_euro_part3.txt"]
 
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
-MY_CHANNEL = "@vlesstrojan"
+MY_CHANNEL = "@sssergy"
 
 # ------------------ ИСТОЧНИКИ (без дубликатов) ------------------
 URLS_RU = [
@@ -69,15 +69,10 @@ URLS_RU = [
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/WHITE-CIDR-RU-checked.txt",
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/WHITE-SNI-RU-all.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
-    "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
-    "https://raw.githubusercontent.com/vsevjik/OBSpiskov/refs/heads/main/wwh",
-    "https://jsnegsukavsos.hb.ru-msk.vkcloud-storage.ru/love",
     "https://etoneya.a9fm.site/1",
-    "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr",
     "https://raw.githubusercontent.com/Argh73/VpnConfigCollector/refs/heads/main/Splitted-By-Country/Russia.txt",
     "https://raw.githubusercontent.com/Omid-0x0x0x/vless/main/configs/vless_config_73.txt",
-    "https://raw.githubusercontent.com/WhitePrime/xraycheck/main/configs/white-list_available(top100)",
     "https://raw.githubusercontent.com/mohamadfg-dev/telegram-v2ray-configs-collector/refs/heads/main/category/vless.txt",
     "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/refs/heads/main/working/countries/Russia.txt",
     "https://raw.githubusercontent.com/vpnineh/config/main/sub/mix_protocol/mix_vless_5.txt",
@@ -88,9 +83,7 @@ URLS_RU = [
     "https://raw.githubusercontent.com/Firmfox/Proxify/refs/heads/main/v2ray_configs/seperated_by_protocol/other.txt",
     "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/protocols/trojan.txt",
     "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/refs/heads/main/config/protocols/vmess.txt",
-    "https://github.com/WhitePrime/xraycheck/raw/main/configs/white-list_available_st",
     "https://raw.githubusercontent.com/OZRED/vless/refs/heads/main/BezRF",
-    "https://raw.githubusercontent.com/WhitePrime/xraycheck/main/configs/white-list_available_st",
     "https://raw.githubusercontent.com/nscl5/5/main/configs/at/all.txt",
     "https://raw.githubusercontent.com/sevcator/5ubscrpt10n/main/mini/m1n1-5ub-6.txt",
     "https://raw.githubusercontent.com/vpnineh/config/main/sub/mix_protocol/mix_vless_1.txt",
@@ -98,11 +91,9 @@ URLS_RU = [
     "https://raw.githubusercontent.com/vpnineh/config/main/sub/mix_protocol/mix_vless_3.txt",
     "https://github.com/Argh94/Proxy-List/raw/refs/heads/main/All_Config.txt",
     "https://github.com/KiryaScript/white-lists/raw/refs/heads/main/githubmirror/20.txt",
-    "https://github.com/WhitePrime/xraycheck/raw/main/configs/white-list_available",
     "https://raw.githubusercontent.com/55prosek-lgtm/vpn_config_for_russia/refs/heads/main/whitelist.txt",
     "https://raw.githubusercontent.com/Firmfox/Proxify/main/v2ray_configs/mixed/subscription-19.txt",
     "https://raw.githubusercontent.com/Ganjabady/XC/refs/heads/main/subscriptions/regions/RU.txt",
-    "https://raw.githubusercontent.com/WhitePrime/xraycheck/main/configs/white-list_available",
     "https://github.com/KiryaScript/white-lists/raw/refs/heads/main/githubmirror/26.txt",
     "https://raw.githubusercontent.com/Ai123999/WhiteKeys/main/WhiteKeys",
     "https://raw.githubusercontent.com/FLEXIY0/matryoshka-vpn/main/configs/russia_whitelist.txt",
@@ -155,9 +146,7 @@ URLS_RU = [
     "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/main/vless",
     "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/1",
     "https://raw.githubusercontent.com/EtoNeYaProject/etoneyaproject.github.io/refs/heads/main/2",
-    "https://github.com/AirLinkVPN/AirLinkVPN.github.io/raw/main/1.txt",
     "https://github.com/EtoNeYaProject/etoneyaproject.github.io/raw/main/test",
-    "https://raw.githubusercontent.com/AirLinkVPN/AirLinkVPN.github.io/main/1.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-checked.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/WHITE-CIDR-RU-all.txt",
     "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/WHITE-CIDR-RU-all.txt",
@@ -170,6 +159,14 @@ URLS_RU = [
     "https://github.com/seknei3/psychic-fiestas/raw/main/bobi_vpn.txt",
     "https://github.com/seknei3/psychic-fiestas/raw/main/vpn_renamed.txt",
     "https://raw.githubusercontent.com/OZRED/vless/refs/heads/main/SuicideEtoExit",
+    # Ниже добавлены отсутствовавшие URL из предыдущего списка
+    "https://raw.githubusercontent.com/FLEXIY0/matryoshka-vpn/refs/heads/main/configs/russia_whitelist.txt",
+    "https://raw.githubusercontent.com/y9felix/s/refs/heads/main/r",
+    "https://raw.githubusercontent.com/sakha1370/OpenRay/fd98dbbea14ddd5912a93481659caaba565e45d4/output/country/RU.txt",
+    "https://raw.githubusercontent.com/KiryaScript/white-lists/cf8bd3a525d1409539e60cae5430f82b58661f31/githubmirror/26.txt",
+    "https://raw.githubusercontent.com/KiryaScript/white-lists/cf8bd3a525d1409539e60cae5430f82b58661f31/githubmirror/27.txt",
+    "https://raw.githubusercontent.com/KiryaScript/white-lists/cf8bd3a525d1409539e60cae5430f82b58661f31/githubmirror/28.txt",
+    "https://subrostunnel.vercel.app/wl.txt"
 ]
 
 URLS_MY = [
