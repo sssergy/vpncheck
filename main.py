@@ -13,10 +13,9 @@ import sqlite3
 from urllib.parse import unquote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
-from contextlib import closing
 
 # ------------------ Настройки ------------------
-VERBOSE = False  # Отключаем вывод по каждому ключу, будет прогресс-бар
+VERBOSE = False
 
 BASE_DIR = "checked"
 FOLDER_RU = os.path.join(BASE_DIR, "RU_Best")
@@ -42,15 +41,16 @@ MAX_PING_MS = 3000
 FAST_LIMIT = 3000
 MAX_HISTORY_AGE = 2 * 24 * 3600
 
-# Дисковый кэш IP → страна
 IP_CACHE_FILE = os.path.join(BASE_DIR, "ip_cache.json")
 IP_CACHE_MAX_AGE_DAYS = 30
 
-# Чёрный список SQLite
 BLACKLIST_DB = os.path.join(BASE_DIR, "blacklist.db")
-BLACKLIST_DAYS = 7   # блокировка на 7 дней
+BLACKLIST_DAYS = 7
 
-# ip-api: не более ~40 req/min — берём 38 для запаса
+# Файл для хранения мёртвых источников
+DEAD_SOURCES_FILE = os.path.join(BASE_DIR, "dead_sources.json")
+DEAD_SOURCE_DAYS = 7   # игнорировать ссылку, если она мертва более N дней
+
 GEO_API_RATE_LIMIT = 38
 GEO_API_WINDOW = 60.0
 
@@ -60,7 +60,7 @@ EURO_FILES = ["my_euro_part1.txt", "my_euro_part2.txt", "my_euro_part3.txt"]
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 MY_CHANNEL = "@vlesstrojan"
 
-# ------------------ ОБНОВЛЁННЫЕ ИСТОЧНИКИ (без дубликатов) ------------------
+# ------------------ ИСТОЧНИКИ (без дубликатов) ------------------
 URLS_RU = [
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_VLESS_RUS_mobile.txt",
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_SS%2BAll_RUS.txt",
@@ -76,7 +76,6 @@ URLS_RU = [
     "https://jsnegsukavsos.hb.ru-msk.vkcloud-storage.ru/love",
     "https://etoneya.a9fm.site/1",
     "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr",
-    # НОВЫЕ источники (из списка, уникальные)
     "https://raw.githubusercontent.com/Argh73/VpnConfigCollector/refs/heads/main/Splitted-By-Country/Russia.txt",
     "https://raw.githubusercontent.com/Omid-0x0x0x/vless/main/configs/vless_config_73.txt",
     "https://raw.githubusercontent.com/WhitePrime/xraycheck/main/configs/white-list_available(top100)",
@@ -201,7 +200,6 @@ RU_MARKERS_STRICT = [
 ]
 
 # ------------------ Страна → название + флаг ------------------
-
 COUNTRY_NAMES_RU = {
     "RU": "Россия", "NL": "Нидерланды", "DE": "Германия", "FI": "Финляндия",
     "GB": "Великобритания", "FR": "Франция", "SE": "Швеция", "PL": "Польша",
@@ -227,7 +225,6 @@ def country_to_flag(code: str) -> str:
 
 
 # ==================== ЧЁРНЫЙ СПИСОК SQLITE ====================
-
 _blacklist_conn = None
 
 def get_blacklist_conn():
@@ -245,7 +242,6 @@ def get_blacklist_conn():
     return _blacklist_conn
 
 def is_ip_blacklisted(ip: str) -> bool:
-    """Проверяет, заблокирован ли IP (если запись есть и срок не истёк)."""
     if not ip:
         return False
     conn = get_blacklist_conn()
@@ -254,7 +250,6 @@ def is_ip_blacklisted(ip: str) -> bool:
     return cur.fetchone() is not None
 
 def add_ip_to_blacklist(ip: str, reason: str):
-    """Добавляет или обновляет IP в чёрном списке с текущим временем."""
     if not ip:
         return
     conn = get_blacklist_conn()
@@ -265,7 +260,6 @@ def add_ip_to_blacklist(ip: str, reason: str):
     conn.commit()
 
 def remove_ip_from_blacklist(ip: str):
-    """Удаляет IP из чёрного списка (при успешном соединении)."""
     if not ip:
         return
     conn = get_blacklist_conn()
@@ -273,18 +267,52 @@ def remove_ip_from_blacklist(ip: str):
     conn.commit()
 
 def clean_old_blacklist():
-    """Удаляет записи старше BLACKLIST_DAYS дней."""
     conn = get_blacklist_conn()
     cutoff = time.time() - BLACKLIST_DAYS * 86400
     conn.execute("DELETE FROM blacklist WHERE block_time < ?", (cutoff,))
     conn.commit()
-    deleted = conn.total_changes
-    if deleted:
-        print(f"🧹 Очищено {deleted} устаревших записей из чёрного списка")
+    return conn.total_changes
+
+
+# ==================== УПРАВЛЕНИЕ МЁРТВЫМИ ИСТОЧНИКАМИ ====================
+_dead_sources = {}   # url -> last_fail_time
+
+def load_dead_sources():
+    global _dead_sources
+    if os.path.exists(DEAD_SOURCES_FILE):
+        try:
+            with open(DEAD_SOURCES_FILE, "r") as f:
+                _dead_sources = json.load(f)
+        except:
+            _dead_sources = {}
+    # Очистить устаревшие
+    cutoff = time.time() - DEAD_SOURCE_DAYS * 86400
+    _dead_sources = {k: v for k, v in _dead_sources.items() if v > cutoff}
+
+def save_dead_sources():
+    try:
+        with open(DEAD_SOURCES_FILE, "w") as f:
+            json.dump(_dead_sources, f, indent=2)
+    except:
+        pass
+
+def mark_source_dead(url: str):
+    _dead_sources[url] = time.time()
+    save_dead_sources()
+
+def mark_source_alive(url: str):
+    if url in _dead_sources:
+        del _dead_sources[url]
+        save_dead_sources()
+
+def is_source_dead(url: str) -> bool:
+    if url not in _dead_sources:
+        return False
+    age = time.time() - _dead_sources[url]
+    return age < DEAD_SOURCE_DAYS * 86400
 
 
 # ==================== GEO-API + КЭШИ ====================
-
 _disk_ip_cache: dict = {}
 
 def load_ip_cache():
@@ -354,7 +382,6 @@ def _geo_api_wait_slot() -> bool:
         _geo_request_times.append(time.time())
     return True
 
-
 def detect_exit_country_via_http(proxy_host: str) -> str:
     global _ip_api_disabled
     ip = resolve_host(proxy_host)
@@ -385,7 +412,6 @@ def detect_exit_country_via_http(proxy_host: str) -> str:
         pass
     return "UNKNOWN"
 
-
 def get_country_fast(host: str, key_name: str) -> str:
     try:
         host_l = host.lower()
@@ -407,7 +433,6 @@ def get_country_fast(host: str, key_name: str) -> str:
         pass
     return "UNKNOWN"
 
-
 def _has_many_ru_markers(host: str, key_str: str) -> bool:
     count = 0
     host_lower = host.lower()
@@ -418,7 +443,6 @@ def _has_many_ru_markers(host: str, key_str: str) -> bool:
             if count >= 2:
                 return True
     return False
-
 
 def is_russian_exit(key_str: str, host: str, country: str) -> bool:
     if country == "RU":
@@ -431,7 +455,6 @@ def is_russian_exit(key_str: str, host: str, country: str) -> bool:
             return True
     return False
 
-
 def is_garbage_text(key_str: str) -> bool:
     upper = key_str.upper()
     for m in BAD_MARKERS:
@@ -442,19 +465,28 @@ def is_garbage_text(key_str: str) -> bool:
     return False
 
 
-# ==================== Загрузка ключей ====================
-
+# ==================== ЗАГРУЗКА КЛЮЧЕЙ С ПРОПУСКОМ МЁРТВЫХ ССЫЛОК ====================
 def fetch_keys(urls, tag):
     out = []
     print(f"Загрузка {tag}...")
     for url in urls:
+        if is_source_dead(url):
+            print(f"💀 Пропуск мёртвой ссылки: {url}")
+            continue
         try:
             if "github.com" in url and "/blob/" in url:
                 url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
             r = requests.get(url, timeout=10)
+            # Считаем мёртвыми: 404, 403, 204, 500+ и т.д.
+            if r.status_code in (404, 403, 204) or 500 <= r.status_code < 600:
+                print(f"⚠️  Не удалось загрузить {url}: HTTP {r.status_code} — ссылка помечена мёртвой")
+                mark_source_dead(url)
+                continue
             if r.status_code != 200:
                 print(f"⚠️  Не удалось загрузить {url}: HTTP {r.status_code}")
                 continue
+            # Успешно — удаляем из dead, если была
+            mark_source_alive(url)
             content = r.text.strip()
             if "://" not in content:
                 try:
@@ -472,16 +504,18 @@ def fetch_keys(urls, tag):
                         continue
                     out.append((l, tag))
         except requests.exceptions.Timeout:
-            print(f"⏰ Таймаут при загрузке {url}")
+            print(f"⏰ Таймаут при загрузке {url} — ссылка помечена мёртвой")
+            mark_source_dead(url)
         except requests.exceptions.ConnectionError as e:
-            print(f"🔌 Ошибка соединения с {url}: {e}")
+            print(f"🔌 Ошибка соединения с {url}: {e} — ссылка помечена мёртвой")
+            mark_source_dead(url)
         except Exception as e:
-            print(f"❌ Ошибка загрузки {url}: {type(e).__name__} - {e}")
+            print(f"❌ Ошибка загрузки {url}: {type(e).__name__} - {e} — ссылка помечена мёртвой")
+            mark_source_dead(url)
     return out
 
 
-# ==================== Проверка одного ключа ====================
-
+# ==================== ПРОВЕРКА ОДНОГО КЛЮЧА ====================
 ERR_TIMEOUT = "timeout"
 ERR_TLS = "tls"
 ERR_DNS = "dns"
@@ -493,7 +527,6 @@ _err_stats_lock = threading.Lock()
 def _inc_err(kind: str):
     with _err_stats_lock:
         _err_stats[kind] += 1
-
 
 def check_single_key(data):
     key, tag = data
@@ -507,10 +540,8 @@ def check_single_key(data):
     except Exception:
         return None, None, None, None, key, ERR_OTHER
 
-    # Получаем IP для черного списка
     ip = resolve_host(host)
     if ip and is_ip_blacklisted(ip):
-        # Пропускаем проверку, ключ сразу в мёртвые
         return None, None, None, None, key, ERR_OTHER
 
     if tag == "MY":
@@ -531,8 +562,6 @@ def check_single_key(data):
         path = unquote(match.group(1))
 
     start = time.time()
-    error_kind = None
-
     try:
         if is_ws:
             protocol = "wss" if is_tls else "ws"
@@ -555,19 +584,16 @@ def check_single_key(data):
                 pass
     except socket.timeout:
         _inc_err(ERR_TIMEOUT)
-        error_kind = ERR_TIMEOUT
         if ip:
             add_ip_to_blacklist(ip, f"timeout:{port}")
         return None, None, None, None, key, ERR_TIMEOUT
     except ssl.SSLError:
         _inc_err(ERR_TLS)
-        error_kind = ERR_TLS
         if ip:
             add_ip_to_blacklist(ip, f"ssl_error:{port}")
         return None, None, None, None, key, ERR_TLS
     except socket.gaierror:
         _inc_err(ERR_DNS)
-        error_kind = ERR_DNS
         if ip:
             add_ip_to_blacklist(ip, f"dns_error:{host}")
         return None, None, None, None, key, ERR_DNS
@@ -588,7 +614,6 @@ def check_single_key(data):
             add_ip_to_blacklist(ip, "unknown_error")
         return None, None, None, None, key, ERR_OTHER
 
-    # Успех — удаляем из чёрного списка, если был
     if ip:
         remove_ip_from_blacklist(ip)
 
@@ -603,15 +628,13 @@ def check_single_key(data):
     return latency, tag, country_exit, host, key, None
 
 
-# ==================== Форматирование / сохранение ====================
-
+# ==================== ФОРМАТИРОВАНИЕ / СОХРАНЕНИЕ ====================
 def make_final_key(k_id, latency, country):
     title_ru = country_to_title_ru(country)
     flag = country_to_flag(country)
     title_full = f"{title_ru} {country}" if country and country != "UNKNOWN" else title_ru
     info_str = f"[{latency}ms {title_full} {flag} {MY_CHANNEL}]"
     return f"{k_id}#{info_str}"
-
 
 def extract_ping(key_str):
     try:
@@ -623,13 +646,11 @@ def extract_ping(key_str):
     except Exception:
         return None
 
-
 def save_exact(keys, folder, filename):
     path = os.path.join(folder, filename)
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(keys) if keys else "")
     return path
-
 
 def save_fixed_chunks_ru(keys_list, folder):
     valid_keys = [k.strip() for k in keys_list if k and k.strip()]
@@ -647,7 +668,6 @@ def save_fixed_chunks_ru(keys_list, folder):
         file_names.append(filename)
     return file_names
 
-
 def save_fixed_chunks_euro(keys_list, folder):
     valid_keys = [k.strip() for k in keys_list if k and k.strip()]
     chunks = [
@@ -664,7 +684,6 @@ def save_fixed_chunks_euro(keys_list, folder):
         file_names.append(filename)
     return file_names
 
-
 def save_chunked(keys_list, folder, base_name, chunk_size=None):
     if chunk_size is None:
         chunk_size = CHUNK_LIMIT
@@ -678,7 +697,6 @@ def save_chunked(keys_list, folder, base_name, chunk_size=None):
         print(f"  {filename}: {len(chunk)} ключей")
     return file_names
 
-
 def load_json(path):
     if os.path.exists(path):
         try:
@@ -688,14 +706,12 @@ def load_json(path):
             pass
     return {}
 
-
 def save_json(path, data):
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
-
 
 def generate_subscriptions_list(ru_fast_files, ru_all_files, euro_fast_files, euro_all_files):
     GITHUB_USER_REPO = "sssergy/vpn-checker"
@@ -775,14 +791,19 @@ def generate_subscriptions_list(ru_fast_files, ru_all_files, euro_fast_files, eu
 
 
 # ==================== MAIN ====================
-
 if __name__ == "__main__":
-    print("=== CHECKER v6 (FAST/ALL + WHITE/BLACK + GEO-CACHE + THROTTLE + SQLITE_BLACKLIST) ===")
+    print("=== CHECKER v6 (FAST/ALL + WHITE/BLACK + GEO-CACHE + SQLITE_BLACKLIST + DEAD_SOURCES) ===")
     print(f"Параметры: CACHE={CACHE_HOURS}h, MAX_PING={MAX_PING_MS}ms, FAST={FAST_LIMIT}, HISTORY={MAX_HISTORY_AGE // 3600}h")
     print(f"Чёрный список SQLite: {BLACKLIST_DB}, блокировка на {BLACKLIST_DAYS} дней")
+    print(f"Мёртвые источники: {DEAD_SOURCES_FILE}, игнор на {DEAD_SOURCE_DAYS} дней")
 
-    # Очистка старого чёрного списка
-    clean_old_blacklist()
+    # Загрузка мёртвых источников
+    load_dead_sources()
+
+    # Очистка чёрного списка IP
+    cleaned = clean_old_blacklist()
+    if cleaned:
+        print(f"🧹 Очищено {cleaned} устаревших записей из чёрного списка IP")
 
     load_ip_cache()
     print(f"📂 Дисковый ip_cache загружен: {len(_disk_ip_cache)} записей")
@@ -953,10 +974,12 @@ if __name__ == "__main__":
         n = estats.get(kind, 0)
         print(f"  {kind:8s}: {n:5d}  ({n * 100 // total_err}%)")
 
-    # Вывод статистики чёрного списка
     conn = get_blacklist_conn()
     cur = conn.execute("SELECT COUNT(*) FROM blacklist")
     blacklist_count = cur.fetchone()[0]
     print(f"\n🚫 Чёрный список SQLite: {blacklist_count} IP заблокировано на {BLACKLIST_DAYS} дней")
+
+    dead_count = len(_dead_sources)
+    print(f"💀 Мёртвых источников (HTTP ошибки): {dead_count} (хранятся {DEAD_SOURCE_DAYS} дней)")
 
     print("\n✅ SUCCESS: FAST/ALL + WHITE/BLACK GENERATED")
