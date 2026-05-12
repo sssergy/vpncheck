@@ -35,10 +35,10 @@ THREADS = 40
 CACHE_HOURS = 6
 CHUNK_LIMIT = 1000
 EURO_CHUNK_LIMIT = 500
-MAX_KEYS_TO_CHECK = 1000000
+MAX_KEYS_TO_CHECK = 30000
 
-MAX_PING_MS = 500
-FAST_LIMIT = 300
+MAX_PING_MS = 3000
+FAST_LIMIT = 3000
 MAX_HISTORY_AGE = 2 * 24 * 3600
 
 IP_CACHE_FILE = os.path.join(BASE_DIR, "ip_cache.json")
@@ -47,9 +47,8 @@ IP_CACHE_MAX_AGE_DAYS = 30
 BLACKLIST_DB = os.path.join(BASE_DIR, "blacklist.db")
 BLACKLIST_DAYS = 7
 
-# Файл для хранения мёртвых источников
 DEAD_SOURCES_FILE = os.path.join(BASE_DIR, "dead_sources.json")
-DEAD_SOURCE_DAYS = 7   # игнорировать ссылку, если она мертва более N дней
+DEAD_SOURCE_DAYS = 7
 
 GEO_API_RATE_LIMIT = 38
 GEO_API_WINDOW = 60.0
@@ -275,7 +274,7 @@ def clean_old_blacklist():
 
 
 # ==================== УПРАВЛЕНИЕ МЁРТВЫМИ ИСТОЧНИКАМИ ====================
-_dead_sources = {}   # url -> last_fail_time
+_dead_sources = {}
 
 def load_dead_sources():
     global _dead_sources
@@ -285,7 +284,6 @@ def load_dead_sources():
                 _dead_sources = json.load(f)
         except:
             _dead_sources = {}
-    # Очистить устаревшие
     cutoff = time.time() - DEAD_SOURCE_DAYS * 86400
     _dead_sources = {k: v for k, v in _dead_sources.items() if v > cutoff}
 
@@ -477,7 +475,6 @@ def fetch_keys(urls, tag):
             if "github.com" in url and "/blob/" in url:
                 url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
             r = requests.get(url, timeout=10)
-            # Считаем мёртвыми: 404, 403, 204, 500+ и т.д.
             if r.status_code in (404, 403, 204) or 500 <= r.status_code < 600:
                 print(f"⚠️  Не удалось загрузить {url}: HTTP {r.status_code} — ссылка помечена мёртвой")
                 mark_source_dead(url)
@@ -485,7 +482,6 @@ def fetch_keys(urls, tag):
             if r.status_code != 200:
                 print(f"⚠️  Не удалось загрузить {url}: HTTP {r.status_code}")
                 continue
-            # Успешно — удаляем из dead, если была
             mark_source_alive(url)
             content = r.text.strip()
             if "://" not in content:
@@ -513,6 +509,60 @@ def fetch_keys(urls, tag):
             print(f"❌ Ошибка загрузки {url}: {type(e).__name__} - {e} — ссылка помечена мёртвой")
             mark_source_dead(url)
     return out
+
+
+# ==================== ДЕДУПЛИКАЦИЯ ====================
+def get_protocol_type(key: str) -> str:
+    if key.startswith("vless://"):
+        return "vless"
+    elif key.startswith("vmess://"):
+        return "vmess"
+    elif key.startswith("trojan://"):
+        return "trojan"
+    elif key.startswith("ss://"):
+        return "ss"
+    return "unknown"
+
+def extract_base_key(key: str) -> str:
+    """Возвращает базовую часть ключа без фрагмента #..."""
+    return key.split("#")[0]
+
+def deduplicate_keys(items):
+    """
+    Дедупликация по (host, port, protocol_type).
+    items: список (key, tag)
+    Возвращает отфильтрованный список, оставляя только первый встреченный дубликат.
+    """
+    seen = {}
+    result = []
+    for key, tag in items:
+        try:
+            if "@" not in key or ":" not in key:
+                result.append((key, tag))
+                continue
+            part = key.split("@")[1].split("?")[0].split("#")[0]
+            host_port = part.split(":")
+            host = host_port[0]
+            port = int(host_port[1])
+            proto = get_protocol_type(key)
+            uid = (host, port, proto)
+            if uid not in seen:
+                seen[uid] = True
+                result.append((key, tag))
+        except:
+            result.append((key, tag))
+    return result
+
+
+# ==================== БЫСТРЫЙ TCP PING ====================
+def tcp_ping(host: str, port: int, timeout: float = 2.0) -> int | None:
+    """Быстрый TCP connect, возвращает задержку в мс или None при ошибке."""
+    start = time.time()
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return int((time.time() - start) * 1000)
+    except Exception:
+        return None
 
 
 # ==================== ПРОВЕРКА ОДНОГО КЛЮЧА ====================
@@ -548,6 +598,19 @@ def check_single_key(data):
         fast_hint = get_country_fast(host, key)
         if fast_hint == "RU" and _has_many_ru_markers(host, key):
             return None, None, None, None, key, ERR_OTHER
+
+    # Быстрый TCP ping перед основной проверкой
+    ping_ms = tcp_ping(host, port, timeout=2.0)
+    if ping_ms is None:
+        if ip:
+            add_ip_to_blacklist(ip, f"tcp_ping_timeout:{port}")
+        return None, None, None, None, key, ERR_TIMEOUT
+
+    # Если TCP ping прошёл, но задержка слишком велика (>MAX_PING_MS) — тоже отбрасываем
+    if ping_ms > MAX_PING_MS:
+        if ip:
+            add_ip_to_blacklist(ip, f"high_ping:{ping_ms}ms")
+        return None, None, None, None, key, ERR_TIMEOUT
 
     is_tls = (
         "security=tls" in key or
@@ -585,7 +648,7 @@ def check_single_key(data):
     except socket.timeout:
         _inc_err(ERR_TIMEOUT)
         if ip:
-            add_ip_to_blacklist(ip, f"timeout:{port}")
+            add_ip_to_blacklist(ip, f"proto_timeout:{port}")
         return None, None, None, None, key, ERR_TIMEOUT
     except ssl.SSLError:
         _inc_err(ERR_TLS)
@@ -614,10 +677,12 @@ def check_single_key(data):
             add_ip_to_blacklist(ip, "unknown_error")
         return None, None, None, None, key, ERR_OTHER
 
+    # Успех — удаляем из чёрного списка IP
     if ip:
         remove_ip_from_blacklist(ip)
 
     latency = int((time.time() - start) * 1000)
+    # Предпочитаем реальную задержку от протокола, но если TLS/WS даёт большую, оставляем её
     country_exit = detect_exit_country_via_http(host)
     if country_exit == "UNKNOWN":
         country_exit = get_country_fast(host, key)
@@ -792,15 +857,12 @@ def generate_subscriptions_list(ru_fast_files, ru_all_files, euro_fast_files, eu
 
 # ==================== MAIN ====================
 if __name__ == "__main__":
-    print("=== CHECKER v6 (FAST/ALL + WHITE/BLACK + GEO-CACHE + SQLITE_BLACKLIST + DEAD_SOURCES) ===")
+    print("=== CHECKER v6 (DEAD_SOURCES + BLACKLIST + TCP_PING + DEDUP) ===")
     print(f"Параметры: CACHE={CACHE_HOURS}h, MAX_PING={MAX_PING_MS}ms, FAST={FAST_LIMIT}, HISTORY={MAX_HISTORY_AGE // 3600}h")
     print(f"Чёрный список SQLite: {BLACKLIST_DB}, блокировка на {BLACKLIST_DAYS} дней")
     print(f"Мёртвые источники: {DEAD_SOURCES_FILE}, игнор на {DEAD_SOURCE_DAYS} дней")
 
-    # Загрузка мёртвых источников
     load_dead_sources()
-
-    # Очистка чёрного списка IP
     cleaned = clean_old_blacklist()
     if cleaned:
         print(f"🧹 Очищено {cleaned} устаревших записей из чёрного списка IP")
@@ -810,6 +872,9 @@ if __name__ == "__main__":
 
     history = load_json(HISTORY_FILE)
     tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
+
+    # Дедупликация по (host, port, protocol)
+    tasks = deduplicate_keys(tasks)
 
     unique_tasks = {k: tag for k, tag in tasks}
     all_items = list(unique_tasks.items())
@@ -825,7 +890,7 @@ if __name__ == "__main__":
     dead_euro = []
     euro_filtered_ru = 0
 
-    print(f"\n📊 Всего уникальных ключей: {len(all_items)}")
+    print(f"\n📊 Всего уникальных ключей после дедупликации: {len(all_items)}")
 
     for k, tag in all_items:
         k_id = k.split("#")[0]
