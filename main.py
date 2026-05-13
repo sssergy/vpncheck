@@ -165,7 +165,9 @@ URLS_RU = [
     "https://raw.githubusercontent.com/KiryaScript/white-lists/cf8bd3a525d1409539e60cae5430f82b58661f31/githubmirror/26.txt",
     "https://raw.githubusercontent.com/KiryaScript/white-lists/cf8bd3a525d1409539e60cae5430f82b58661f31/githubmirror/27.txt",
     "https://raw.githubusercontent.com/KiryaScript/white-lists/cf8bd3a525d1409539e60cae5430f82b58661f31/githubmirror/28.txt",
-    "https://subrostunnel.vercel.app/wl.txt"
+    "https://subrostunnel.vercel.app/wl.txt",
+    "https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/32.2.txt",
+    "https://raw.githubusercontent.com/qopq1366/VlessConfig/refs/heads/main/sub.txt"
 ]
 
 URLS_MY = [
