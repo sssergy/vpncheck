@@ -28,7 +28,7 @@ if os.path.exists(FOLDER_EURO):
 os.makedirs(FOLDER_RU, exist_ok=True)
 os.makedirs(FOLDER_EURO, exist_ok=True)
 
-TIMEOUT = 7
+TIMEOUT = 8
 socket.setdefaulttimeout(TIMEOUT)
 THREADS = 40
 
@@ -37,8 +37,8 @@ CHUNK_LIMIT = 1000
 EURO_CHUNK_LIMIT = 500
 MAX_KEYS_TO_CHECK = 300000
 
-MAX_PING_MS = 1000
-FAST_LIMIT = 1000
+MAX_PING_MS = 3000
+FAST_LIMIT = 3000
 MAX_HISTORY_AGE = 2 * 24 * 3600
 
 IP_CACHE_FILE = os.path.join(BASE_DIR, "ip_cache.json")
